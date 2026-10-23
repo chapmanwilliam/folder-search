@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Folder Search</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <div class="brand">Folder Search</div>
+    <div class="section-label">Search in</div>
+    <nav id="folders"></nav>
+    <button id="add-folder" class="btn btn-primary btn-block">Add folder…</button>
+    <div id="sidebar-foot"></div>
+  </aside>
+
+  <main id="main">
+    <div id="job-banner" hidden>
+      <div class="job-text">
+        <strong id="job-title"></strong>
+        <span id="job-detail" class="muted"></span>
+      </div>
+      <div class="bar"><div id="job-bar"></div></div>
+      <button id="job-stop" class="btn btn-small">Stop</button>
+      <button id="job-dismiss" class="btn btn-small" hidden>Dismiss</button>
+    </div>
+
+    <form id="search-form" autocomplete="off">
+      <input id="q" type="search" placeholder="Describe what you're looking for…" spellcheck="false">
+      <select id="sub" hidden><option value="">All subfolders</option></select>
+      <button class="btn btn-primary" type="submit">Search</button>
+    </form>
+    <div id="search-meta" class="muted"></div>
+
+    <div id="panes">
+      <section id="results"></section>
+      <section id="preview">
+        <div id="preview-head" hidden>
+          <div id="preview-title"></div>
+          <div class="preview-actions">
+            <button id="open-file" class="btn btn-small">Open</button>
+            <button id="reveal-file" class="btn btn-small">Show in Finder</button>
+          </div>
+        </div>
+        <div id="preview-body"><div class="empty">Select a result to preview it here.</div></div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<!-- First run: model download -->
+<div id="model-screen" class="overlay" hidden>
+  <div class="dialog">
+    <h2>One-time setup</h2>
+    <p>Folder Search uses Google's <strong>EmbeddingGemma</strong> model to understand what your documents mean. It runs on this Mac: your documents are never uploaded anywhere.</p>
+    <p>The model is about 1.2 GB and is downloaded once.</p>
+    <div id="model-progress" hidden>
+      <div class="bar"><div id="model-bar"></div></div>
+      <div id="model-text" class="muted"></div>
+    </div>
+    <div id="model-error" class="error" hidden></div>
+    <div class="dialog-actions">
+      <button id="model-download" class="btn btn-primary">Download model</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add folder: pre-scan and choice -->
+<div id="scan-screen" class="overlay" hidden>
+  <div class="dialog">
+    <h2 id="scan-title">Checking folder…</h2>
+    <div id="scan-body"><div class="spinner"></div></div>
+    <div class="dialog-actions" id="scan-actions"></div>
+  </div>
+</div>
+
+<!-- Lists: failures / skipped -->
+<div id="list-screen" class="overlay" hidden>
+  <div class="dialog dialog-wide">
+    <h2 id="list-title"></h2>
+    <div id="list-body" class="list-body"></div>
+    <div class="dialog-actions"><button class="btn" id="list-close">Close</button></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

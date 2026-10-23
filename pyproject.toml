@@ -1,0 +1,42 @@
+[project]
+name = "folder-search"
+version = "0.1.0"
+description = "Pick a folder, index it, and search its documents by meaning. Runs entirely on your Mac."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+dependencies = [
+    "sentence-transformers>=5.0",
+    "torch>=2.4",
+    # EmbeddingGemma 2's processor is multimodal and imports PIL and
+    # torchvision even for text-only use.
+    "pillow>=10.0",
+    "torchvision>=0.19",
+    "huggingface-hub>=0.30",
+    "pymupdf>=1.28.2",
+    "sqlite-vec>=0.1.9",
+    "python-docx>=1.2.0",
+    "extract-msg>=0.50",
+    "pywebview>=5.0",
+]
+
+[project.scripts]
+fsearch = "folder_search.cli:main"
+folder-search = "folder_search.app:main"
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/folder_search"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "model: tests that load the embedding model (slow; downloads ~1 GB on first run)",
+]

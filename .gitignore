@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.db
+*.db-wal
+*.db-shm
+.env
+.DS_Store
+dist/
+build/
+src/folder_search/ui/vendor/
