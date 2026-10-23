@@ -35,6 +35,7 @@ While the app is open, it keeps your folders up to date by itself:
 
 - **When it opens**, it checks every folder and indexes anything added, changed or deleted while it was closed. If a first index was interrupted, it carries on.
 - **While it is open**, macOS tells it when files in an indexed folder change. About a minute after the changes stop (so a document being saved, or a batch being copied in, is handled once), it indexes just what changed.
+- **Every 30 minutes** it checks every folder again anyway, which catches what macOS doesn't report, such as cloud files you have just made available offline. A check that finds nothing new takes seconds.
 
 These updates run quietly: a line at the bottom of the sidebar shows what is happening. They never download cloud-only files unless you chose that for the folder. If you press **Stop** while a folder is indexing, that folder is paused and left alone until you choose **Resume indexing** from its ⋯ menu. You can also choose **Update index** from that menu at any time.
 

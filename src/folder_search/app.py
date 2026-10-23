@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 
 from . import background, library
-from .background import IndexLock, take_over
+from .background import INTERVAL_SECONDS, IndexLock, take_over
 from .settings import app_home
 from .engine.cloudfiles import scan
 from .engine.ocr import ocr_available
@@ -243,9 +243,12 @@ class Api:
         self._lock_problem = ""
         self._gate.set()
         self._apply_background_setting()
-        for e in library.load():
-            if not e.paused and Path(e.path).is_dir():
-                self.queue.submit(e.path, auto=True)
+        self._check_all()
+        # Also re-check every folder regularly, as the background job does
+        # when the app is closed. The file watcher doesn't see everything:
+        # a cloud file made available offline may change nothing it notices.
+        # A check with nothing new takes seconds and doesn't load the model.
+        threading.Thread(target=self._check_regularly, daemon=True).start()
         if self._watch:
             try:
                 from .watch import FolderWatcher
@@ -255,6 +258,19 @@ class Api:
                 self.watcher.start()
             except Exception:
                 self.watcher = None  # updates still work by hand
+
+    def _check_all(self) -> None:
+        for e in library.load():
+            if not e.paused and Path(e.path).is_dir():
+                self.queue.submit(e.path, auto=True)
+
+    def _check_regularly(self) -> None:
+        while True:
+            time.sleep(INTERVAL_SECONDS)
+            try:
+                self._check_all()
+            except Exception:
+                pass
 
     # -- updates while the app is closed ----------------------------------
 

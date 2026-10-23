@@ -124,3 +124,24 @@ def test_missing_or_emptied_folder_keeps_the_index(tmp_path, embedder):
     assert store.stats()["files"] == 2
     with pytest.raises(ix.FolderMissing):
         ix.index_folder(tmp_path / "gone", store, embedder)
+
+
+def test_cloud_only_file_is_indexed_once_downloaded(tmp_path, embedder, monkeypatch):
+    # e.g. a Dropbox folder switched to "Make available offline"
+    root = tmp_path / "cases"
+    root.mkdir()
+    f = root / "letter.txt"
+    f.write_text("Letter of claim under the pre-action protocol.")
+    st = f.stat()
+    online = {"flag": True}
+    monkeypatch.setattr(
+        ix, "walk", lambda folder: [Entry(f, st.st_size, st.st_mtime, online["flag"])]
+    )
+    store = library.open_store(root)
+    p = ix.index_folder(root, store, embedder)
+    assert (p.added, p.skipped_online) == (0, 1)
+
+    online["flag"] = False
+    p = ix.index_folder(root, store, embedder)
+    assert (p.added, p.skipped_online) == (1, 0)
+    assert "letter.txt" in store.known_files()
