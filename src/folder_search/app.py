@@ -266,9 +266,12 @@ class Api:
     def _apply_background_setting(self) -> None:
         # On unless the user turned it off. Re-installing on each start keeps
         # the LaunchAgent pointing at the Python this copy runs on.
+        # A copy run from a source checkout (development) leaves the
+        # LaunchAgent alone, so it keeps pointing at the installed app.
         try:
             if self._settings().get("background", True):
-                background.enable()
+                if not _running_from_source():
+                    background.enable()
             else:
                 background.disable()
         except Exception:
@@ -373,6 +376,12 @@ class Api:
     def reveal(self, abs_path: str) -> bool:
         subprocess.Popen(["open", "-R", abs_path])
         return True
+
+
+def _running_from_source() -> bool:
+    """True in a git checkout (src/folder_search/app.py beside pyproject.toml);
+    False for an installed copy, which lives in site-packages."""
+    return (Path(__file__).resolve().parents[2] / "pyproject.toml").exists()
 
 
 def _set_dock_icon() -> None:
