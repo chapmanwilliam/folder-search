@@ -280,13 +280,21 @@ def enable(python: str | None = None) -> None:
     path = agent_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     new = plistlib.dumps(agent_plist(python))
-    if path.exists() and path.read_bytes() == new:
-        return  # already installed as is; avoid re-triggering a run
     domain = f"gui/{os.getuid()}"
-    if path.exists():
+    loaded = _launchctl("print", f"{domain}/{LABEL}").returncode == 0
+    if loaded and path.exists() and path.read_bytes() == new:
+        return  # already installed as is; avoid re-triggering a run
+    if loaded:
         _launchctl("bootout", f"{domain}/{LABEL}")
     path.write_bytes(new)
-    _launchctl("bootstrap", domain, str(path))
+    # Straight after a bootout, bootstrap can fail ("Input/output error")
+    # while launchd finishes removing the old job; try again briefly.
+    for _ in range(20):
+        r = _launchctl("bootstrap", domain, str(path))
+        if r.returncode == 0 or _launchctl("print", f"{domain}/{LABEL}").returncode == 0:
+            return
+        time.sleep(0.5)
+    raise RuntimeError(f"launchctl bootstrap failed: {r.stderr.strip()}")
 
 
 def disable() -> None:
