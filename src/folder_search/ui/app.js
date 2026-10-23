@@ -396,6 +396,17 @@ $("#job-dismiss").onclick = () => { dismissedJob = jobKey(state.job); show($("#j
 
 $("#search-form").addEventListener("submit", (ev) => { ev.preventDefault(); runSearch(); });
 $("#sub").addEventListener("change", () => { if (lastQuery) runSearch(); });
+// Emptying the box (typing it away, or the × button) clears the results.
+$("#q").addEventListener("input", () => { if (!$("#q").value.trim()) clearResults(); });
+
+function clearResults() {
+  lastQuery = "";   // also makes any search still in flight discard its answer
+  current = null;
+  $("#results").innerHTML = "";
+  $("#search-meta").textContent = "";
+  show($("#preview-head"), false);
+  $("#preview-body").innerHTML = `<div class="empty">Select a result to preview it here.</div>`;
+}
 
 async function runSearch() {
   const q = $("#q").value.trim();
@@ -453,7 +464,7 @@ async function openPreview(result, hit, terms, page) {
   const body = $("#preview-body");
   const pg = page || hit.page_start || 1;
   const p = await api.preview(result.abs, pg, page && page !== hit.page_start ? "" : hit.text);
-  if (current.hit !== hit) return;
+  if (!current || current.hit !== hit) return;
   if (p.kind === "pdf") {
     body.innerHTML = `<div class="page-nav">
         <button class="btn btn-small" id="pg-prev" ${p.page <= 1 ? "disabled" : ""}>‹</button>
