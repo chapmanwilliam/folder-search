@@ -19,6 +19,7 @@ from pathlib import Path
 from . import library
 from .engine.cloudfiles import scan
 from .engine.ocr import ocr_available
+from .jobs import IndexQueue
 
 UI_DIR = Path(__file__).parent / "ui"
 EMBED_BATCH = 32
@@ -52,20 +53,23 @@ class SharedEmbedder:
 
 
 class Api:
-    def __init__(self):
+    def __init__(self, embedder_factory=None, watch: bool = True):
         self.window = None
-        self._embedder: SharedEmbedder | None = None
+        self._embedder = None
+        self._embedder_factory = embedder_factory or SharedEmbedder
         self._embedder_lock = threading.Lock()
         self._model_state = {"phase": "unknown", "done": 0, "total": 0, "error": ""}
-        self._job: dict | None = None  # the running (or last) index job
-        self._stop = threading.Event()
+        self.queue = IndexQueue(self._get_embedder)
+        self._watch = watch
+        self.watcher = None
+        self._background_started = False
 
     # -- model ----------------------------------------------------------
 
     def _get_embedder(self) -> SharedEmbedder:
         with self._embedder_lock:
             if self._embedder is None:
-                self._embedder = SharedEmbedder()
+                self._embedder = self._embedder_factory()
             return self._embedder
 
     def model_status(self) -> dict:
@@ -91,6 +95,7 @@ class Api:
                 self._model_state["phase"] = "loading"
                 self._get_embedder()
                 self._model_state["phase"] = "ready"
+                self.start_background()
             except Exception as e:
                 self._model_state.update(phase="error", error=f"{type(e).__name__}: {e}")
 
@@ -119,6 +124,7 @@ class Api:
                     "path": e.path,
                     "name": e.name,
                     "include_online": e.include_online,
+                    "paused": e.paused,
                     "exists": Path(e.path).is_dir(),
                     "stats": stats,
                     "subfolders": [s for s, _ in subs],
@@ -129,6 +135,7 @@ class Api:
             "job": self.progress(),
             "ocr": ocr_available(),
             "model": self.model_status(),
+            "auto_update": self.watcher is not None,
         }
 
     def choose_folder(self) -> str | None:
@@ -152,12 +159,11 @@ class Api:
         return d
 
     def remove_folder(self, path: str) -> bool:
-        if self._job and self._job["path"] == path and self._job["p"].get("phase") in (
-            "scanning",
-            "indexing",
-        ):
+        if self.queue.busy_with(path):
             return False
+        self.queue.cancel(path)
         library.remove(path)
+        self._sync_watcher()
         return True
 
     def failures(self, path: str) -> list:
@@ -177,47 +183,50 @@ class Api:
     # -- indexing -------------------------------------------------------
 
     def start_index(self, path: str, include_online: bool | None = None) -> dict:
-        if self._job and self._job["p"].get("phase") in ("scanning", "indexing", "loading"):
-            return {"ok": False, "error": "Another folder is being indexed."}
+        """The user asked to index (or update) a folder: run it next, visibly."""
         existing = library.get(path)
         if include_online is None:
             include_online = existing.include_online if existing else False
         entry = library.add(path, include_online=include_online)
-        self._stop.clear()
-        job = {"path": entry.path, "name": entry.name, "p": {"phase": "loading"}}
-        self._job = job
-
-        def run():
-            from .engine.indexer import index_folder
-
-            try:
-                embedder = self._get_embedder()
-                store = library.open_store(entry.path)
-                try:
-                    index_folder(
-                        Path(entry.path),
-                        store,
-                        embedder,
-                        include_online=include_online,
-                        on_progress=lambda p: job.__setitem__("p", p.as_dict()),
-                        should_stop=self._stop.is_set,
-                    )
-                finally:
-                    store.close()
-            except Exception as e:
-                job["p"] = {**job["p"], "phase": "error", "error": f"{type(e).__name__}: {e}"}
-
-        threading.Thread(target=run, daemon=True).start()
+        self.queue.submit(entry.path, auto=False, include_online=include_online)
+        self._sync_watcher()
         return {"ok": True}
 
     def stop_index(self) -> bool:
-        self._stop.set()
+        self.queue.stop_current()
         return True
 
     def progress(self) -> dict | None:
-        if not self._job:
-            return None
-        return {"path": self._job["path"], "name": self._job["name"], **self._job["p"]}
+        return self.queue.progress()
+
+    # -- automatic updates ---------------------------------------------
+
+    def start_background(self) -> bool:
+        """Once the model is available: update every folder, then watch them.
+
+        Called by the front end after startup, and again when a first-run
+        model download finishes. Safe to call more than once.
+        """
+        if self._background_started or self.model_status()["phase"] != "ready":
+            return False
+        self._background_started = True
+        for e in library.load():
+            if not e.paused and Path(e.path).is_dir():
+                self.queue.submit(e.path, auto=True)
+        if self._watch:
+            try:
+                from .watch import FolderWatcher
+
+                self.watcher = FolderWatcher(lambda root: self.queue.submit(root, auto=True))
+                self._sync_watcher()
+                self.watcher.start()
+            except Exception:
+                self.watcher = None  # updates still work by hand
+        return True
+
+    def _sync_watcher(self) -> None:
+        if self.watcher is not None:
+            self.watcher.sync([e.path for e in library.load()])
 
     # -- search ---------------------------------------------------------
 

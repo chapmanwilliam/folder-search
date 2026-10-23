@@ -32,6 +32,10 @@ from .ocr import OcrFailed, OcrUnavailable, ocr_available, ocr_pdf
 from .store import Store
 
 
+class FolderMissing(Exception):
+    pass
+
+
 @dataclass
 class Progress:
     phase: str = "scanning"  # scanning | indexing | done | stopped | error
@@ -108,11 +112,20 @@ def index_folder(
     stop = should_stop or (lambda: False)
     report()
 
+    if not folder.is_dir():
+        raise FolderMissing(f"{folder} is not there (moved, renamed, or a drive not connected)")
+
     allow_downloads(include_online)
     try:
         entries = list(walk(folder))
         known = store.known_files()
         present = {str(e.path.relative_to(folder)) for e in entries}
+
+        # A folder that suddenly looks empty is far more likely to be a sync
+        # app that is not running, or a drive half-mounted, than a user who
+        # deleted everything. Keep the index rather than wipe it.
+        if known and not entries:
+            raise FolderMissing(f"{folder} appears empty; the index was kept")
 
         for rel, rec in known.items():
             if rel not in present:

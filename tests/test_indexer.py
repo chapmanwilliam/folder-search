@@ -109,3 +109,18 @@ def test_library_end_to_end(tmp_path, embedder):
     store.close()
     library.remove(root)
     assert library.load() == []
+
+
+def test_missing_or_emptied_folder_keeps_the_index(tmp_path, embedder):
+    import pytest
+
+    root = make_folder(tmp_path / "cases")
+    store = library.open_store(root)
+    ix.index_folder(root, store, embedder)
+    for f in list(walk(root)):
+        f.path.unlink()
+    with pytest.raises(ix.FolderMissing):
+        ix.index_folder(root, store, embedder)
+    assert store.stats()["files"] == 2
+    with pytest.raises(ix.FolderMissing):
+        ix.index_folder(tmp_path / "gone", store, embedder)

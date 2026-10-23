@@ -6,6 +6,10 @@ let state = { folders: [], job: null, model: {}, ocr: false };
 let scope = null;          // path of the folder being searched, or null for all
 let current = null;        // { result, hit } shown in the preview
 let pollTimer = null;
+let dismissedJob = "";     // the finished job whose banner the user closed
+const RUNNING = ["loading", "scanning", "indexing"];
+const isRunning = (job) => !!job && RUNNING.includes(job.phase);
+const jobKey = (job) => job ? `${job.path}|${job.started || ""}|${job.phase}` : "";
 let lastQuery = "";
 
 const STOP_WORDS = new Set("a an and are as at be by for from has have in is it of on or that the this to was were will with what when where which who why how did does do i my me we our".split(" "));
@@ -69,7 +73,7 @@ async function refresh() {
   state = await api.state();
   renderFolders();
   renderJob(state.job);
-  if (state.job && ["loading", "scanning", "indexing"].includes(state.job.phase)) startPolling();
+  startPolling();
 }
 
 function renderFolders() {
@@ -86,9 +90,10 @@ function renderFolders() {
     if (!f.exists) bits.push('<span class="error">folder missing</span>');
     else if (s.error) bits.push('<span class="error">index damaged</span>');
     else {
-      const busy = state.job && state.job.path === f.path && ["loading", "scanning", "indexing"].includes(state.job.phase);
+      const busy = isRunning(state.job) && state.job.path === f.path;
       bits.push(`${num(s.files)} files`);
-      if (busy) bits.push("indexing…");
+      if (busy) bits.push(state.job.auto ? "updating…" : "indexing…");
+      else if (f.paused) bits.push("paused");
       else if (s.last_indexed) bits.push(s.last_indexed.slice(0, 10));
       else bits.push("not finished");
     }
@@ -109,7 +114,7 @@ function renderFolders() {
   if (scope !== null && !state.folders.some((f) => f.path === scope)) scope = null;
   if (scope === null && state.folders.length === 1) scope = state.folders[0].path;
   renderSubfolders();
-  $("#sidebar-foot").textContent = state.ocr ? "Scanned PDFs: OCR on" : "Scanned PDFs are skipped (install ocrmypdf to read them)";
+  renderFoot();
 }
 
 function renderSubfolders() {
@@ -141,11 +146,12 @@ document.addEventListener("click", closeMenus);
 function openMenu(row, path) {
   closeMenus();
   const f = state.folders.find((x) => x.path === path);
-  const busy = state.job && state.job.path === path && ["loading", "scanning", "indexing"].includes(state.job.phase);
+  const busy = isRunning(state.job) && state.job.path === path;
+  const userBusy = busy && !state.job.auto;
   const m = document.createElement("div");
   m.className = "menu";
   m.innerHTML = `
-    <button data-m="reindex" ${busy ? "disabled" : ""}>Update index</button>
+    <button data-m="reindex" ${userBusy ? "disabled" : ""}>${f.paused ? "Resume indexing" : "Update index"}</button>
     <button data-m="online">${f.include_online ? "Stop downloading cloud files" : "Include cloud-only files…"}</button>
     <button data-m="reveal">Show in Finder</button>
     <button data-m="remove" class="danger" ${busy ? "disabled" : ""}>Remove from Folder Search</button>`;
@@ -155,7 +161,7 @@ function openMenu(row, path) {
     closeMenus();
     if (what === "reindex") startIndex(path, f.include_online);
     else if (what === "online") {
-      if (f.include_online) { await api.start_index(path, false); startPolling(); }
+      if (f.include_online) { await api.start_index(path, false); refresh(); }
       else addFolderFlow(path);
     } else if (what === "reveal") api.reveal(path);
     else if (what === "remove") {
@@ -187,7 +193,7 @@ $("#list-close").onclick = () => show($("#list-screen"), false);
 
 async function checkModel() {
   const m = await api.model_status();
-  if (m.phase === "ready") { api.warm_up(); return true; }
+  if (m.phase === "ready") { api.warm_up(); api.start_background(); return true; }
   show($("#model-screen"));
   if (m.phase === "downloading" || m.phase === "loading") pollModel();
   return false;
@@ -281,27 +287,48 @@ async function startIndex(path, includeOnline) {
   const res = await api.start_index(path, includeOnline);
   if (!res.ok) { alert(res.error); return; }
   await refresh();
-  startPolling();
 }
 
+// One heartbeat for the whole app: quick while something is indexing, slow
+// otherwise, so automatic updates started by the folder watcher show up too.
 function startPolling() {
   if (pollTimer) return;
   let ticks = 0;
-  pollTimer = setInterval(async () => {
-    const job = await api.progress();
+  let wasRunning = isRunning(state.job);
+  const beat = async () => {
+    let job = null;
+    try { job = await api.progress(); } catch (e) { /* window closing */ }
+    const running = isRunning(job);
+    state.job = job;
     renderJob(job);
-    if (++ticks % 8 === 0) { state = await api.state(); renderFolders(); }
-    if (!job || !["loading", "scanning", "indexing"].includes(job.phase)) {
-      clearInterval(pollTimer);
-      pollTimer = null;
-      refresh();
-    }
-  }, 700);
+    if (running && ++ticks % 8 === 0) { state = await api.state(); renderFolders(); }
+    if (running !== wasRunning) { await refresh(); }
+    wasRunning = running;
+    pollTimer = setTimeout(beat, running ? 700 : 2500);
+  };
+  pollTimer = setTimeout(beat, 300);
+}
+
+function renderFoot() {
+  const lines = [];
+  const job = state.job;
+  if (isRunning(job) && job.auto) {
+    lines.push(job.phase === "indexing" && job.total
+      ? `Updating ${esc(job.name)}: ${num(job.done)} of ${num(job.total)}`
+      : `Checking ${esc(job.name)} for changes…`);
+  } else if (state.auto_update) {
+    lines.push("Folders update automatically when files change.");
+  }
+  lines.push(state.ocr ? "Scanned PDFs: OCR on" : "Scanned PDFs are skipped (install ocrmypdf to read them)");
+  $("#sidebar-foot").innerHTML = lines.map((l) => `<div>${l}</div>`).join("");
 }
 
 function renderJob(job) {
   const banner = $("#job-banner");
-  if (!job || job.dismissed) { show(banner, false); return; }
+  renderFoot();
+  // Automatic updates run quietly (status in the sidebar); the banner is for
+  // jobs the user started.
+  if (!job || job.auto || jobKey(job) === dismissedJob) { show(banner, false); return; }
   show(banner);
   const running = ["loading", "scanning", "indexing"].includes(job.phase);
   show($("#job-stop"), running);
@@ -328,7 +355,7 @@ function renderJob(job) {
   } else if (job.phase === "stopped") {
     pct = job.total ? (100 * job.done) / job.total : 0;
     title = `Stopped indexing ${job.name}`;
-    detail = `${num(job.done)} of ${num(job.total)} done. Choose "Update index" to carry on.`;
+    detail = `${num(job.done)} of ${num(job.total)} done. Paused: choose "Resume indexing" from the ⋯ menu to carry on.`;
   } else if (job.phase === "error") {
     title = `Indexing ${job.name} failed`;
     detail = job.error || "";
@@ -339,7 +366,7 @@ function renderJob(job) {
 }
 
 $("#job-stop").onclick = () => { api.stop_index(); $("#job-title").textContent = "Stopping after this file…"; };
-$("#job-dismiss").onclick = () => show($("#job-banner"), false);
+$("#job-dismiss").onclick = () => { dismissedJob = jobKey(state.job); show($("#job-banner"), false); };
 
 // ---------- search ----------
 

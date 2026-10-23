@@ -26,7 +26,16 @@ The first time you open it, Folder Search downloads its language model (about 1.
 4. Type what you are looking for in plain English. Put words in "double quotes" to require that exact phrase. If the folder has subfolders (one per case or client, say), you can limit the search to one of them.
 5. Click a passage to see the page. **Open** opens the file; **Show in Finder** shows where it is.
 
-After the first index, **Update index** (in the ⋯ menu beside a folder) only reads files that have been added or changed since.
+### Keeping up to date
+
+While the app is open, it keeps your folders up to date by itself:
+
+- **When it opens**, it checks every folder and indexes anything added, changed or deleted while it was closed. If a first index was interrupted, it carries on.
+- **While it is open**, macOS tells it when files in an indexed folder change. About a minute after the changes stop (so a document being saved, or a batch being copied in, is handled once), it indexes just what changed.
+
+These updates run quietly: a line at the bottom of the sidebar shows what is happening. They never download cloud-only files unless you chose that for the folder. If you press **Stop** while a folder is indexing, that folder is paused and left alone until you choose **Resume indexing** from its ⋯ menu. You can also choose **Update index** from that menu at any time.
+
+If a folder goes missing or suddenly looks empty (a drive not connected, or Dropbox not running), its index is kept, not wiped.
 
 Reads: PDF, Word (.docx and .doc), RTF, plain text, Markdown, and email (.eml and Outlook .msg).
 

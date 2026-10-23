@@ -16,6 +16,9 @@ class FolderEntry:
     name: str
     added: str
     include_online: bool = False
+    # Set when the user stops indexing. Automatic updates leave a paused
+    # folder alone until the user chooses "Update index" again.
+    paused: bool = False
 
 
 def _file() -> Path:
@@ -27,7 +30,8 @@ def load() -> list[FolderEntry]:
         data = json.loads(_file().read_text())
     except (FileNotFoundError, json.JSONDecodeError):
         return []
-    return [FolderEntry(**d) for d in data]
+    fields = set(FolderEntry.__dataclass_fields__)
+    return [FolderEntry(**{k: v for k, v in d.items() if k in fields}) for d in data]
 
 
 def save(entries: list[FolderEntry]) -> None:
@@ -57,6 +61,15 @@ def add(path: str | Path, include_online: bool = False) -> FolderEntry:
     entries.append(e)
     save(entries)
     return e
+
+
+def set_paused(path: str | Path, paused: bool) -> None:
+    p = str(Path(path).expanduser().resolve())
+    entries = load()
+    for e in entries:
+        if e.path == p:
+            e.paused = paused
+    save(entries)
 
 
 def remove(path: str | Path) -> None:
