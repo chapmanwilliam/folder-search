@@ -30,9 +30,15 @@ class Request:
 
 
 class IndexQueue:
-    def __init__(self, get_embedder: Callable, on_finished: Callable[[dict], None] | None = None):
+    def __init__(self, get_embedder: Callable, on_finished: Callable[[dict], None] | None = None,
+                 gate: threading.Event | None = None):
         self._get_embedder = get_embedder
         self._on_finished = on_finished
+        # Jobs wait for this before running: the app opens it once it holds
+        # the indexing lock, so it never writes alongside a background run.
+        self.gate = gate or threading.Event()
+        if gate is None:
+            self.gate.set()
         self._cv = threading.Condition()
         self._pending: list[Request] = []
         self._current: dict | None = None
@@ -116,6 +122,7 @@ class IndexQueue:
             self._thread.start()
 
     def _loop(self) -> None:
+        self.gate.wait()
         while True:
             with self._cv:
                 while not self._pending:

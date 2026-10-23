@@ -99,10 +99,10 @@ class Embedder:
         self.model = _load(name, self.device, dimensions)
 
     def embed_documents(self, texts: list[str]) -> np.ndarray:
-        return _unit(self.model.encode(texts, prompt_name="document"))
+        return _unit(self.model.encode(texts, prompt_name="document", show_progress_bar=False))
 
     def embed_queries(self, texts: list[str]) -> np.ndarray:
-        return _unit(self.model.encode(texts, prompt_name="query"))
+        return _unit(self.model.encode(texts, prompt_name="query", show_progress_bar=False))
 
     def release_memory(self) -> None:
         """MPS keeps cached allocations across encode calls; long index runs

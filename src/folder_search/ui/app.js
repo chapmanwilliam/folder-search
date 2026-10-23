@@ -320,7 +320,31 @@ function renderFoot() {
     lines.push("Folders update automatically when files change.");
   }
   lines.push(state.ocr ? "Scanned PDFs: OCR on" : "Scanned PDFs are skipped (install ocrmypdf to read them)");
-  $("#sidebar-foot").innerHTML = lines.map((l) => `<div>${l}</div>`).join("");
+  const bg = state.background || {};
+  let html = "";
+  if (bg.lock_problem) html += `<div class="foot-warn">${esc(bg.lock_problem)}</div>`;
+  if (bg.enabled && bg.needs_access && bg.needs_access.length) {
+    html += `<div class="foot-warn">
+      <strong>Updates while closed can't read ${bg.needs_access.length === 1 ? "a folder" : bg.needs_access.length + " folders"}.</strong>
+      macOS needs to give the background updater Full Disk Access.
+      <div class="foot-actions">
+        <button class="btn btn-small" id="fda-open">Open Privacy settings</button>
+        <button class="btn btn-small" id="fda-show">Show the program to add</button>
+      </div>
+      <div>In Full Disk Access, click +, then drag in the file shown in Finder.</div>
+    </div>`;
+  }
+  html += `<label class="foot-toggle"><input type="checkbox" id="bg-toggle" ${bg.enabled ? "checked" : ""}>
+    Update when the app is closed</label>`;
+  if (bg.enabled && bg.last_run) html += `<div class="foot-sub">Last background update: ${esc(bg.last_run.slice(0, 16))}</div>`;
+  html += lines.map((l) => `<div>${l}</div>`).join("");
+  const foot = $("#sidebar-foot");
+  if (foot.dataset.html === html) return;  // unchanged: keep clicks and focus intact
+  foot.dataset.html = html;
+  foot.innerHTML = html;
+  $("#bg-toggle").onchange = async (ev) => { state.background = await api.set_background(ev.target.checked); renderFoot(); };
+  const o = $("#fda-open"); if (o) o.onclick = () => api.open_privacy_settings();
+  const r = $("#fda-show"); if (r) r.onclick = () => api.reveal_python();
 }
 
 function renderJob(job) {

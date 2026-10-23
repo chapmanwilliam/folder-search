@@ -38,6 +38,13 @@ def cmd_index(args) -> int:
     from .engine.indexer import index_folder
     from .engine.model import Embedder
 
+    from .background import IndexLock
+
+    lock = IndexLock()
+    if not lock.acquire("cli"):
+        print("Folder Search is already indexing (the app is open, or a background update is running).",
+              file=sys.stderr)
+        return 1
     folder = Path(args.folder).expanduser().resolve()
     entry = library.add(folder, include_online=args.include_online)
     store = library.open_store(folder)
@@ -117,6 +124,30 @@ def cmd_failures(args) -> int:
     return 0
 
 
+def cmd_background(args) -> int:
+    from . import background as bg
+
+    if args.action == "enable":
+        bg.enable()
+        print(f"on: updates every {bg.INTERVAL_SECONDS // 60} min and at login; log at {bg.log_path()}")
+    elif args.action == "disable":
+        bg.disable()
+        print("off")
+    elif args.action == "run":
+        import logging
+
+        logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
+        bg.run_once()
+    else:
+        s = bg.read_status()
+        print(f"{'on' if bg.is_enabled() else 'off'}; last run {s.get('finished') or s.get('started') or 'never'}")
+        for path, r in s.get("folders", {}).items():
+            print(f"  {path}: {r}")
+        for path in s.get("needs_access", []):
+            print(f"  {path}: NEEDS FULL DISK ACCESS for {sys.executable}")
+    return 0
+
+
 def cmd_remove(args) -> int:
     library.remove(args.folder)
     print("removed")
@@ -150,6 +181,10 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("failures", help="files that could not be indexed")
     s.add_argument("folder")
     s.set_defaults(fn=cmd_failures)
+
+    s = sub.add_parser("background", help="updates while the app is closed")
+    s.add_argument("action", choices=["status", "enable", "disable", "run"], nargs="?", default="status")
+    s.set_defaults(fn=cmd_background)
 
     s = sub.add_parser("remove", help="forget a folder and delete its index")
     s.add_argument("folder")

@@ -37,6 +37,12 @@ While the app is open, it keeps your folders up to date by itself:
 
 These updates run quietly: a line at the bottom of the sidebar shows what is happening. They never download cloud-only files unless you chose that for the folder. If you press **Stop** while a folder is indexing, that folder is paused and left alone until you choose **Resume indexing** from its ⋯ menu. You can also choose **Update index** from that menu at any time.
 
+### While the app is closed
+
+A small background job (a macOS LaunchAgent) does the same check at login and every 30 minutes, at low priority. When nothing has changed it takes seconds and doesn't load the language model. If you open the app while it is working, it stops after the current file and the app takes over, so nothing is indexed twice. Turn it off with **Update when the app is closed** at the bottom of the sidebar. macOS may show a "Background Items Added" notice the first time.
+
+Background jobs sometimes need **Full Disk Access** to read Dropbox and other cloud folders. Without it, macOS doesn't refuse; the folder just never answers. So the job tests each folder first. If one doesn't answer, the app says so and shows you what to add in System Settings → Privacy & Security → Full Disk Access.
+
 If a folder goes missing or suddenly looks empty (a drive not connected, or Dropbox not running), its index is kept, not wiped.
 
 Reads: PDF, Word (.docx and .doc), RTF, plain text, Markdown, and email (.eml and Outlook .msg).
@@ -68,7 +74,11 @@ fsearch search "date of knowledge" -n 5 # search every indexed folder
 fsearch list                            # indexed folders and their stats
 fsearch failures ~/Documents/Cases      # files that could not be read, and why
 fsearch remove ~/Documents/Cases        # forget a folder and delete its index
+fsearch background status               # updates while the app is closed: on/off, last run
+fsearch background disable              # turn them off (enable to turn back on)
 ```
+
+The background job logs to `~/Library/Logs/Folder Search/background.log`.
 
 ## Development
 

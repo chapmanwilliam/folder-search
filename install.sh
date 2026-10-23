@@ -30,7 +30,7 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 
 echo "Installing Folder Search (the first time downloads about 1 GB of libraries)..."
-uv tool install --force --python 3.12 "$SOURCE"
+uv tool install --force --reinstall-package folder-search --python 3.12 "$SOURCE"
 BIN="$(uv tool dir --bin)/folder-search"
 PY="$(uv tool dir)/folder-search/bin/python"
 ICON="$("$PY" -c 'import folder_search, pathlib; print(pathlib.Path(folder_search.__file__).parent / "assets" / "FolderSearch.icns")')"

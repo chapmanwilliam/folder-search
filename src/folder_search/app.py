@@ -10,13 +10,17 @@ The front end (ui/index.html) calls the methods of `Api` through
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
 
-from . import library
+from . import background, library
+from .background import IndexLock, take_over
+from .settings import app_home
 from .engine.cloudfiles import scan
 from .engine.ocr import ocr_available
 from .jobs import IndexQueue
@@ -60,10 +64,13 @@ class Api:
         self._embedder_factory = embedder_factory or SharedEmbedder
         self._embedder_lock = threading.Lock()
         self._model_state = {"phase": "unknown", "done": 0, "total": 0, "error": ""}
-        self.queue = IndexQueue(self._get_embedder)
+        self._gate = threading.Event()
+        self.queue = IndexQueue(self._get_embedder, gate=self._gate)
         self._watch = watch
         self.watcher = None
         self._background_started = False
+        self._lock = IndexLock()
+        self._lock_problem = ""
 
     # -- model ----------------------------------------------------------
 
@@ -137,6 +144,7 @@ class Api:
             "ocr": ocr_available(),
             "model": self.model_status(),
             "auto_update": self.watcher is not None,
+            "background": self.background_info(),
         }
 
     def choose_folder(self) -> str | None:
@@ -211,6 +219,17 @@ class Api:
         if self._background_started or self.model_status()["phase"] != "ready":
             return False
         self._background_started = True
+        threading.Thread(target=self._start_background, daemon=True).start()
+        return True
+
+    def _start_background(self) -> None:
+        # Take indexing over from a background run, if one is working; it
+        # stops after its current file.
+        if not take_over(self._lock):
+            self._lock_problem = "Another copy of Folder Search is indexing."
+            return
+        self._gate.set()
+        self._apply_background_setting()
         for e in library.load():
             if not e.paused and Path(e.path).is_dir():
                 self.queue.submit(e.path, auto=True)
@@ -223,6 +242,53 @@ class Api:
                 self.watcher.start()
             except Exception:
                 self.watcher = None  # updates still work by hand
+
+    # -- updates while the app is closed ----------------------------------
+
+    def _settings(self) -> dict:
+        try:
+            return json.loads((app_home() / "settings.json").read_text())
+        except (FileNotFoundError, json.JSONDecodeError):
+            return {}
+
+    def _apply_background_setting(self) -> None:
+        # On unless the user turned it off. Re-installing on each start keeps
+        # the LaunchAgent pointing at the Python this copy runs on.
+        try:
+            if self._settings().get("background", True):
+                background.enable()
+            else:
+                background.disable()
+        except Exception:
+            pass
+
+    def set_background(self, on: bool) -> dict:
+        s = self._settings()
+        s["background"] = bool(on)
+        p = app_home() / "settings.json"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(s, indent=2))
+        self._apply_background_setting()
+        return self.background_info()
+
+    def background_info(self) -> dict:
+        status = background.read_status()
+        return {
+            "enabled": background.is_enabled(),
+            "last_run": status.get("finished") or status.get("started"),
+            "needs_access": status.get("needs_access", []),
+            "lock_problem": self._lock_problem,
+        }
+
+    def open_privacy_settings(self) -> bool:
+        subprocess.Popen(
+            ["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"]
+        )
+        return True
+
+    def reveal_python(self) -> bool:
+        """Show the program to add under Full Disk Access."""
+        subprocess.Popen(["open", "-R", sys.executable])
         return True
 
     def _sync_watcher(self) -> None:
