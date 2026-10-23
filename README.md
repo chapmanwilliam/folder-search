@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/icon-256.png" width="128" height="128" alt="Folder Search icon"></p>
+
 # Folder Search
 
 Pick a folder, let it index, then search the documents in it by meaning, not just by exact words. Ask "when did the limitation period start to run" and you get the passages that discuss it, including ones that never use those words, each with its page number and a preview of the page with the passage highlighted.

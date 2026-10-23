@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4f86f7"/><stop offset="1" stop-color="#2148b8"/>
+    </linearGradient>
+    <linearGradient id="folderBack" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#cfe0ff"/><stop offset="1" stop-color="#b3cbf7"/>
+    </linearGradient>
+    <linearGradient id="folderFront" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#e3ecfd"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="14"/><feOffset dy="12"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.30"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="10"/><feOffset dy="8"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.28"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <clipPath id="lensClip"><circle cx="600" cy="560" r="150"/></clipPath>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)" filter="url(#shadow)"/>
+  <!-- folder -->
+  <g filter="url(#soft)">
+    <path d="M232 330 a28 28 0 0 1 28-28 h150 a28 28 0 0 1 22 11 l30 37 h302 a28 28 0 0 1 28 28 v330 a28 28 0 0 1-28 28 H260 a28 28 0 0 1-28-28z" fill="url(#folderBack)"/>
+    <rect x="232" y="392" width="560" height="374" rx="28" fill="url(#folderFront)"/>
+  </g>
+  <!-- lens -->
+  <g filter="url(#soft)">
+    <line x1="712" y1="672" x2="808" y2="768" stroke="#14254f" stroke-width="58" stroke-linecap="round"/>
+    <circle cx="600" cy="560" r="150" fill="#ffffff"/>
+    <g clip-path="url(#lensClip)">
+      <rect x="470" y="478" width="230" height="22" rx="11" fill="#c4d0e6"/>
+      <rect x="452" y="532" width="270" height="40" rx="10" fill="#ffd23f"/>
+      <rect x="470" y="541" width="210" height="22" rx="11" fill="#7a6a1c" opacity="0.55"/>
+      <rect x="470" y="604" width="250" height="22" rx="11" fill="#c4d0e6"/>
+      <rect x="470" y="652" width="160" height="22" rx="11" fill="#c4d0e6"/>
+    </g>
+    <circle cx="600" cy="560" r="150" fill="none" stroke="#14254f" stroke-width="34"/>
+  </g>
+</svg>

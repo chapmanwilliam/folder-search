@@ -22,6 +22,7 @@ from .engine.ocr import ocr_available
 from .jobs import IndexQueue
 
 UI_DIR = Path(__file__).parent / "ui"
+ICON = Path(__file__).parent / "assets" / "FolderSearch.icns"
 EMBED_BATCH = 32
 
 
@@ -296,6 +297,23 @@ class Api:
         return True
 
 
+def _set_dock_icon() -> None:
+    """Show our icon in the Dock even when run as a plain command.
+
+    Launched from Folder Search.app, macOS takes the icon from the bundle;
+    run as `folder-search` or `uv run folder-search`, it would otherwise
+    show the generic Python rocket.
+    """
+    try:
+        from AppKit import NSApplication, NSImage
+
+        image = NSImage.alloc().initWithContentsOfFile_(str(ICON))
+        if image is not None:
+            NSApplication.sharedApplication().setApplicationIconImage_(image)
+    except Exception:
+        pass
+
+
 def main() -> None:
     import webview
 
@@ -313,6 +331,7 @@ def main() -> None:
         text_select=True,
     )
     api.window = window
+    _set_dock_icon()
     webview.start(debug=bool(os.environ.get("FOLDER_SEARCH_DEBUG")))
 
 

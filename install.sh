@@ -32,6 +32,8 @@ fi
 echo "Installing Folder Search (the first time downloads about 1 GB of libraries)..."
 uv tool install --force --python 3.12 "$SOURCE"
 BIN="$(uv tool dir --bin)/folder-search"
+PY="$(uv tool dir)/folder-search/bin/python"
+ICON="$("$PY" -c 'import folder_search, pathlib; print(pathlib.Path(folder_search.__file__).parent / "assets" / "FolderSearch.icns")')"
 
 # A minimal app bundle, so the app can live in the Dock and be opened from
 # Launchpad or Spotlight. It just starts the installed command.
@@ -41,6 +43,7 @@ cat > "$APP/Contents/MacOS/Folder Search" <<SCRIPT
 exec "$BIN" "\$@"
 SCRIPT
 chmod +x "$APP/Contents/MacOS/Folder Search"
+cp "$ICON" "$APP/Contents/Resources/FolderSearch.icns"
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -51,12 +54,16 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIdentifier</key><string>io.github.chapmanwilliam.folder-search</string>
   <key>CFBundleExecutable</key><string>Folder Search</string>
   <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleIconFile</key><string>FolderSearch</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
   <key>LSMinimumSystemVersion</key><string>12.0</string>
   <key>NSHighResolutionCapable</key><true/>
 </dict>
 </plist>
 PLIST
+
+# Finder caches app icons; touching the bundle makes it look again.
+touch "$APP"
 
 echo ""
 echo "Done. Open \"Folder Search\" from your Applications folder (in your home folder) or Spotlight."

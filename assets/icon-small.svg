@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4f86f7"/><stop offset="1" stop-color="#2148b8"/>
+    </linearGradient>
+    <clipPath id="lensClip"><circle cx="590" cy="560" r="175"/></clipPath>
+  </defs>
+  <!-- small sizes: a fuller tile, no shadow, fewer and bolder shapes -->
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="url(#bg)"/>
+  <path d="M190 300 a30 30 0 0 1 30-30 h170 a30 30 0 0 1 24 12 l34 42 h336 a30 30 0 0 1 30 30 v380 a30 30 0 0 1-30 30 H220 a30 30 0 0 1-30-30z" fill="#c6d9ff"/>
+  <rect x="190" y="370" width="624" height="414" rx="30" fill="#ffffff"/>
+  <line x1="720" y1="690" x2="850" y2="820" stroke="#14254f" stroke-width="90" stroke-linecap="round"/>
+  <circle cx="590" cy="560" r="175" fill="#ffffff"/>
+  <g clip-path="url(#lensClip)">
+    <rect x="400" y="520" width="380" height="80" rx="16" fill="#ffc400"/>
+  </g>
+  <circle cx="590" cy="560" r="175" fill="none" stroke="#14254f" stroke-width="56"/>
+</svg>
