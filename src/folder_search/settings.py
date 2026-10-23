@@ -24,7 +24,7 @@ class IndexSettings:
     chunk_tokens: int = 400
     chunk_overlap: int = 60
     ocr: bool = True  # used only if ocrmypdf is installed
-    ocr_timeout: int = 900
+    ocr_timeout: int = 3600  # big scanned bundles; OCR stops at once if asked
     ocr_language: str = "eng"
 
 

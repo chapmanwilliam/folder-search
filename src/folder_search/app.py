@@ -235,11 +235,12 @@ class Api:
         return True
 
     def _start_background(self) -> None:
-        # Take indexing over from a background run, if one is working; it
-        # stops after its current file.
-        if not take_over(self._lock):
-            self._lock_problem = "Another copy of Folder Search is indexing."
-            return
+        # Take indexing over from a background run, if one is working. It
+        # stops within seconds, but keep waiting however long it takes:
+        # giving up would leave this session with no updates at all.
+        while not take_over(self._lock, wait=30):
+            self._lock_problem = "Waiting for the background update to stop…"
+        self._lock_problem = ""
         self._gate.set()
         self._apply_background_setting()
         for e in library.load():

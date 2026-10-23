@@ -28,7 +28,7 @@ from ..settings import IndexSettings, ocr_cache_dir
 from .chunk import chunk_pages
 from .cloudfiles import Entry, allow_downloads, reset_download_policy, walk
 from .extract import Extracted, UnsupportedFormat, extract
-from .ocr import OcrFailed, OcrUnavailable, ocr_available, ocr_pdf
+from .ocr import OcrFailed, OcrUnavailable, Stopped, ocr_available, ocr_pdf
 from .store import Store
 
 
@@ -68,7 +68,9 @@ def file_sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def extract_with_ocr(path: Path, sha: str, settings: IndexSettings) -> tuple[Extracted, bool]:
+def extract_with_ocr(
+    path: Path, sha: str, settings: IndexSettings, should_stop=None
+) -> tuple[Extracted, bool]:
     """Extract text, OCR'ing a PDF that has no text layer if ocrmypdf exists.
 
     Returns the extraction and whether OCR was used. OCR failure is not
@@ -81,7 +83,12 @@ def extract_with_ocr(path: Path, sha: str, settings: IndexSettings) -> tuple[Ext
         return extracted, False
     try:
         sidecar = ocr_pdf(
-            path, sha, ocr_cache_dir(), timeout=settings.ocr_timeout, language=settings.ocr_language
+            path,
+            sha,
+            ocr_cache_dir(),
+            timeout=settings.ocr_timeout,
+            language=settings.ocr_language,
+            should_stop=should_stop,
         )
     except (OcrFailed, OcrUnavailable):
         return extracted, False
@@ -163,7 +170,13 @@ def index_folder(
                 return p
             p.current = rel
             report()
-            _index_one(e, rel, store, embedder, known.get(rel), settings, p)
+            try:
+                _index_one(e, rel, store, embedder, known.get(rel), settings, p, stop)
+            except Stopped:  # raised before the file writes anything
+                p.phase = "stopped"
+                p.current = ""
+                report()
+                return p
             store.commit()
             p.done += 1
             p.done_bytes += e.size
@@ -181,14 +194,31 @@ def index_folder(
         reset_download_policy()
 
 
-def _index_one(e: Entry, rel: str, store: Store, embedder, rec, settings, p: Progress) -> None:
+EMBED_BATCH = 256  # about 8 s of embedding; a stop request is checked between batches
+
+
+def _embed(embedder, texts: list[str], stop=None):
+    """Embed in batches so a stop request isn't held up by a long bundle."""
+    import numpy as np
+
+    parts = []
+    for i in range(0, len(texts), EMBED_BATCH):
+        if i and stop and stop():
+            raise Stopped()
+        parts.append(embedder.embed_documents(texts[i : i + EMBED_BATCH]))
+    return np.concatenate(parts) if len(parts) > 1 else parts[0]
+
+
+def _index_one(
+    e: Entry, rel: str, store: Store, embedder, rec, settings, p: Progress, stop=None
+) -> None:
     try:
         sha = file_sha256(e.path)
         if rec and rec.sha256 == sha:
             store.touch_file(rec.id, e.mtime)
             p.unchanged += 1
             return
-        extracted, used_ocr = extract_with_ocr(e.path, sha, settings)
+        extracted, used_ocr = extract_with_ocr(e.path, sha, settings, stop)
         if not extracted.pages:
             if extracted.empty_pages:
                 hint = "" if ocr_available() else "; install ocrmypdf to read scans"
@@ -199,7 +229,9 @@ def _index_one(e: Entry, rel: str, store: Store, embedder, rec, settings, p: Pro
             p.failed += 1
             return
         chunks = chunk_pages(extracted.pages, settings.chunk_tokens, settings.chunk_overlap)
-        vectors = embedder.embed_documents([c.text for c in chunks])
+        vectors = _embed(embedder, [c.text for c in chunks], stop)
+    except Stopped:
+        raise
     except UnsupportedFormat:
         return
     except Exception as ex:  # unreadable, encrypted, corrupt: report, move on

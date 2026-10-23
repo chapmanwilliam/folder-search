@@ -13,7 +13,10 @@ from __future__ import annotations
 
 import os
 import shutil
+import signal
 import subprocess
+import time
+from collections.abc import Callable
 from pathlib import Path
 
 # A Finder-launched app gets a minimal PATH, so look where Homebrew puts it.
@@ -26,6 +29,11 @@ class OcrUnavailable(Exception):
 
 class OcrFailed(Exception):
     pass
+
+
+class Stopped(Exception):
+    """Indexing was asked to stop part-way through a file. The file is left
+    unindexed (not marked as failed) and is picked up again next time."""
 
 
 def ocrmypdf_path() -> str | None:
@@ -49,6 +57,7 @@ def ocr_pdf(
     cache_dir: Path,
     timeout: int = 900,
     language: str = "eng",
+    should_stop: Callable[[], bool] | None = None,
 ) -> Path:
     """Return a path to an OCR'd copy of src, building it if not cached."""
     exe = ocrmypdf_path()
@@ -76,20 +85,49 @@ def ocr_pdf(
     ]
     env = dict(os.environ)
     env["PATH"] = os.pathsep.join([env.get("PATH", ""), *_EXTRA_BIN])
+    # A scanned bundle of a few hundred pages takes many minutes, so poll
+    # rather than wait: a stop request (the app taking over, or Stop) ends
+    # it within a second. ocrmypdf runs tesseract in child processes, so
+    # it gets its own process group and the whole group is killed.
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+        start_new_session=True,
+    )
+    deadline = time.monotonic() + timeout
     try:
-        proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=timeout, check=False, env=env
-        )
-    except subprocess.TimeoutExpired:
+        while True:
+            try:
+                stdout, stderr = proc.communicate(timeout=0.5)
+                break
+            except subprocess.TimeoutExpired:
+                pass
+            if should_stop and should_stop():
+                raise Stopped()
+            if time.monotonic() > deadline:
+                raise OcrFailed(f"timed out after {timeout}s")
+    except BaseException:
+        _kill_group(proc)
         tmp.unlink(missing_ok=True)
-        raise OcrFailed(f"timed out after {timeout}s") from None
+        raise
 
     if proc.returncode != 0 or not tmp.exists() or tmp.stat().st_size == 0:
         tmp.unlink(missing_ok=True)
-        detail = (proc.stderr or proc.stdout or "").strip().splitlines()
+        detail = (stderr or stdout or "").strip().splitlines()
         raise OcrFailed(
             f"ocrmypdf exit {proc.returncode}: {detail[-1] if detail else 'no output'}"
         )
 
     os.replace(tmp, out)
     return out
+
+
+def _kill_group(proc: subprocess.Popen) -> None:
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+    proc.wait()
