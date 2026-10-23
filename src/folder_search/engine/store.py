@@ -221,6 +221,17 @@ class Store:
             "group by folder order by folder collate nocase"
         ).fetchall()
 
+    def all_dirs(self) -> list[tuple[str, int]]:
+        """Every subfolder holding indexed files, at any depth, with the
+        number of files under it (including deeper subfolders)."""
+        counts: dict[str, int] = {}
+        for (path,) in self.db.execute("select path from files"):
+            parts = path.split("/")[:-1]
+            for i in range(1, len(parts) + 1):
+                d = "/".join(parts[:i])
+                counts[d] = counts.get(d, 0) + 1
+        return sorted(counts.items(), key=lambda kv: kv[0].lower())
+
     def commit(self) -> None:
         self.db.commit()
 

@@ -131,10 +131,33 @@ button, input, select { font: inherit; color: inherit; }
   border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); outline: none;
 }
 #q:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent); }
-#sub {
-  max-width: 220px; border: 1px solid var(--border); border-radius: 8px;
-  background: var(--bg-card); padding: 0 8px;
+#scope-picker { position: relative; display: flex; gap: 4px; flex: none; }
+#scope-btn { display: flex; align-items: center; gap: 6px; max-width: 280px; border-radius: 8px; }
+#scope-btn.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--bg-card)); }
+#scope-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.scope-icon { font-size: 13px; }
+.caret { color: var(--muted); font-size: 11px; }
+#scope-clear { border-radius: 8px; padding: 0 10px; font-size: 16px; line-height: 1; }
+#scope-pop {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; width: 440px; max-width: 70vw;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow);
+  display: flex; flex-direction: column; max-height: 60vh;
 }
+#scope-filter { margin: 8px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg); outline: none; }
+#scope-filter:focus { border-color: var(--accent); }
+#scope-list { overflow-y: auto; padding: 0 6px 6px; }
+.scope-row {
+  display: flex; align-items: baseline; gap: 8px; width: 100%; text-align: left; border: 0; background: none;
+  padding: 6px 8px; border-radius: 6px; cursor: pointer;
+}
+.scope-row:hover, .scope-row.kb-focus { background: var(--bg-hover); }
+.scope-row.sel { color: var(--accent); }
+.scope-path { flex: 1; min-width: 0; word-break: break-word; }
+.scope-path .parent { color: var(--muted); }
+.scope-count { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; flex: none; }
+.scope-note { color: var(--muted); font-size: 12px; padding: 6px 8px; }
+.crumb { color: inherit; text-decoration: none; cursor: pointer; border-radius: 3px; }
+.crumb:hover { color: var(--accent); text-decoration: underline; }
 #search-meta { padding: 0 20px 8px; font-size: 12px; min-height: 18px; }
 
 #panes { flex: 1; display: grid; grid-template-columns: minmax(340px, 1fr) minmax(360px, 1.1fr); min-height: 0; border-top: 1px solid var(--border); }

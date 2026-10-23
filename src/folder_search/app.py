@@ -110,6 +110,10 @@ class Api:
         threading.Thread(target=run, daemon=True).start()
         return self.model_status()
 
+    def model_loaded(self) -> bool:
+        """Whether the model is in memory, so a search will be quick."""
+        return self._embedder is not None
+
     def warm_up(self) -> bool:
         """Load the model in the background so the first search is quick."""
         threading.Thread(target=self._get_embedder, daemon=True).start()
@@ -174,6 +178,14 @@ class Api:
         library.remove(path)
         self._sync_watcher()
         return True
+
+    def subfolders(self, path: str) -> list:
+        """Every subfolder of an indexed folder, for the 'search in' picker."""
+        store = library.open_store(path)
+        try:
+            return [{"dir": d, "files": n} for d, n in store.all_dirs()]
+        finally:
+            store.close()
 
     def failures(self, path: str) -> list:
         store = library.open_store(path)
@@ -312,7 +324,7 @@ class Api:
         for e in entries:
             store = library.open_store(e.path)
             try:
-                hits = search_chunks(store, qvec, query, folder=subfolder or None)
+                hits = search_chunks(store, qvec, query, within=subfolder or None)
             finally:
                 store.close()
             for fr in group_by_file(hits, max_files=limit):

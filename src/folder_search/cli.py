@@ -92,7 +92,7 @@ def cmd_search(args) -> int:
     embedder = Embedder()
     for e in entries:
         store = library.open_store(e.path)
-        results = search(store, embedder, args.query, folder=args.sub, max_files=args.n)
+        results = search(store, embedder, args.query, within=args.sub, max_files=args.n)
         store.close()
         print(f"== {e.name}")
         for i, fr in enumerate(results, 1):
@@ -170,7 +170,7 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("search", help="search indexed folders")
     s.add_argument("query")
     s.add_argument("--folder", help="only this indexed folder")
-    s.add_argument("--sub", help="only this top-level subfolder")
+    s.add_argument("--sub", help="only this subfolder (any depth, e.g. \"Papers/2026 papers\")")
     s.add_argument("-n", type=int, default=10, help="documents to show")
     s.add_argument("--passages", type=int, default=2)
     s.set_defaults(fn=cmd_search)

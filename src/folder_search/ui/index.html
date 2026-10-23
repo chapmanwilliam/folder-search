@@ -5,7 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Folder Search</title>
 <link rel="icon" href="icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="style.css">
+<!-- Load style.css and app.js fresh every time: after an update, the
+     window's web view would otherwise reuse the previous version's copies. -->
+<script>document.write('<link rel="stylesheet" href="style.css?t=' + Date.now() + '">');</script>
 </head>
 <body>
 <div id="app">
@@ -30,7 +32,16 @@
 
     <form id="search-form" autocomplete="off">
       <input id="q" type="search" placeholder="Describe what you're looking for…" spellcheck="false">
-      <select id="sub" hidden><option value="">All subfolders</option></select>
+      <div id="scope-picker" hidden>
+        <button type="button" id="scope-btn" class="btn" title="Choose a subfolder to search in">
+          <span class="scope-icon" aria-hidden="true">📁</span><span id="scope-label">Whole folder</span><span class="caret" aria-hidden="true">▾</span>
+        </button>
+        <button type="button" id="scope-clear" class="btn" title="Search the whole folder again" hidden>×</button>
+        <div id="scope-pop" hidden>
+          <input id="scope-filter" type="text" placeholder="Type to find a subfolder…" spellcheck="false" autocomplete="off">
+          <div id="scope-list" role="listbox"></div>
+        </div>
+      </div>
       <button class="btn btn-primary" type="submit">Search</button>
     </form>
     <div id="search-meta" class="muted"></div>
@@ -86,6 +97,6 @@
   </div>
 </div>
 
-<script src="app.js"></script>
+<script>document.write('<script src="app.js?t=' + Date.now() + '"><\/script>');</script>
 </body>
 </html>

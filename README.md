@@ -25,8 +25,9 @@ The first time you open it, Folder Search downloads its language model (about 1.
 1. **Add folder…** and choose a folder. Folder Search counts the documents first and tells you how long indexing will take.
 2. If some files exist only in the cloud (Dropbox "online-only", iCloud "Optimise Mac Storage", OneDrive, Google Drive), it tells you how many there are and how much they would take to download. You choose whether to index only the files already on your Mac, or to download everything.
 3. Indexing runs in the background, so you can search while it works. You can stop at any time; next time it carries on where it left off.
-4. Type what you are looking for in plain English. Put words in "double quotes" to require that exact phrase. If the folder has subfolders (one per case or client, say), you can limit the search to one of them.
-5. Click a passage to see the page. **Open** opens the file; **Show in Finder** shows where it is.
+4. Type what you are looking for in plain English. Put words in "double quotes" to require that exact phrase.
+5. To search only part of a folder, click the 📁 button next to the search box and type part of a subfolder's name (any depth, e.g. "2026 papers"). Or click any folder name in a result's location line to search just that folder. × goes back to the whole folder.
+6. Click a passage to see the page. **Open** opens the file; **Show in Finder** shows where it is.
 
 ### Keeping up to date
 

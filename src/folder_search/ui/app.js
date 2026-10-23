@@ -4,6 +4,9 @@ const $ = (s) => document.querySelector(s);
 let api = null;
 let state = { folders: [], job: null, model: {}, ocr: false };
 let scope = null;          // path of the folder being searched, or null for all
+let within = "";           // subfolder of `scope` to search in ("" = the whole folder)
+let dirCache = {};         // indexed folder path -> [{dir, files}]
+let modelLoaded = false;
 let current = null;        // { result, hit } shown in the preview
 let pollTimer = null;
 let dismissedJob = "";     // the finished job whose banner the user closed
@@ -111,21 +114,101 @@ function renderFolders() {
     items.push(`<div class="muted" style="padding:4px 8px 10px;font-size:12.5px">No folders yet. Add one to get started.</div>`);
   }
   nav.innerHTML = items.join("");
-  if (scope !== null && !state.folders.some((f) => f.path === scope)) scope = null;
+  if (scope !== null && !state.folders.some((f) => f.path === scope)) { scope = null; within = ""; }
   if (scope === null && state.folders.length === 1) scope = state.folders[0].path;
-  renderSubfolders();
+  renderScope();
   renderFoot();
 }
 
-function renderSubfolders() {
-  const sel = $("#sub");
+// ---------- searching within a subfolder ----------
+
+function renderScope() {
   const f = state.folders.find((x) => x.path === scope);
-  const subs = f ? f.subfolders : [];
-  const prev = sel.value;
-  sel.innerHTML = `<option value="">All subfolders</option>` + subs.map((s) => `<option value="${esc(s)}">${esc(s)}</option>`).join("");
-  if (subs.includes(prev)) sel.value = prev;
-  show(sel, subs.length > 0);
+  show($("#scope-picker"), !!f && f.subfolders.length > 0);
+  if (!f) within = "";
+  const label = within ? within.split("/").pop() : "Whole folder";
+  $("#scope-label").textContent = label;
+  $("#scope-btn").title = within ? `Searching in ${f ? f.name : ""} › ${within.split("/").join(" › ")}` : "Choose a subfolder to search in";
+  $("#scope-btn").classList.toggle("active", !!within);
+  show($("#scope-clear"), !!within);
 }
+
+function setWithin(root, dir) {
+  if (root !== scope) { scope = root; renderFolders(); }
+  within = dir || "";
+  renderScope();
+  closeScopePop();
+  if (lastQuery) runSearch();
+}
+
+async function openScopePop() {
+  if (!scope) return;
+  show($("#scope-pop"));
+  $("#scope-filter").value = "";
+  $("#scope-list").innerHTML = `<div class="scope-note">Loading folders…</div>`;
+  $("#scope-filter").focus();
+  if (!dirCache[scope]) dirCache[scope] = await api.subfolders(scope);
+  renderScopeList();
+}
+
+function closeScopePop() { show($("#scope-pop"), false); }
+
+function renderScopeList() {
+  const dirs = dirCache[scope] || [];
+  const words = $("#scope-filter").value.toLowerCase().split(/\s+/).filter(Boolean);
+  const matches = dirs.filter((d) => words.every((w) => d.dir.toLowerCase().includes(w)));
+  const shown = matches.slice(0, 300);
+  const f = state.folders.find((x) => x.path === scope);
+  const rows = [];
+  if (!words.length) {
+    rows.push(`<button class="scope-row ${within ? "" : "sel"}" data-dir="">
+      <span class="scope-path"><strong>Whole folder</strong> <span class="parent">(${esc(f ? f.name : "")})</span></span></button>`);
+  }
+  for (const d of shown) {
+    const parts = d.dir.split("/");
+    const last = parts.pop();
+    const parent = parts.length ? `<span class="parent">${esc(parts.join(" › "))} › </span>` : "";
+    rows.push(`<button class="scope-row ${d.dir === within ? "sel" : ""}" data-dir="${esc(d.dir)}">
+      <span class="scope-path">${parent}<strong>${esc(last)}</strong></span>
+      <span class="scope-count">${num(d.files)}</span></button>`);
+  }
+  if (!matches.length) rows.push(`<div class="scope-note">No subfolder matches “${esc($("#scope-filter").value)}”.</div>`);
+  else if (matches.length > shown.length) rows.push(`<div class="scope-note">${num(matches.length - shown.length)} more: keep typing to narrow the list.</div>`);
+  $("#scope-list").innerHTML = rows.join("");
+  const first = $("#scope-list .scope-row");
+  if (first) first.classList.add("kb-focus");
+}
+
+$("#scope-btn").addEventListener("click", (ev) => {
+  ev.stopPropagation();
+  if ($("#scope-pop").hidden) openScopePop(); else closeScopePop();
+});
+$("#scope-clear").addEventListener("click", () => setWithin(scope, ""));
+$("#scope-pop").addEventListener("click", (ev) => {
+  ev.stopPropagation();
+  const row = ev.target.closest(".scope-row");
+  if (row) setWithin(scope, row.dataset.dir);
+});
+$("#scope-filter").addEventListener("input", renderScopeList);
+$("#scope-filter").addEventListener("keydown", (ev) => {
+  const rows = [...document.querySelectorAll("#scope-list .scope-row")];
+  let i = rows.findIndex((r) => r.classList.contains("kb-focus"));
+  if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+    ev.preventDefault();
+    if (!rows.length) return;
+    rows.forEach((r) => r.classList.remove("kb-focus"));
+    i = ev.key === "ArrowDown" ? Math.min(rows.length - 1, i + 1) : Math.max(0, i - 1);
+    rows[i].classList.add("kb-focus");
+    rows[i].scrollIntoView({ block: "nearest" });
+  } else if (ev.key === "Enter") {
+    ev.preventDefault();
+    if (rows[i]) setWithin(scope, rows[i].dataset.dir);
+  } else if (ev.key === "Escape") {
+    closeScopePop();
+    $("#scope-btn").focus();
+  }
+});
+document.addEventListener("click", (ev) => { if (!ev.target.closest("#scope-picker")) closeScopePop(); });
 
 $("#folders").addEventListener("click", async (ev) => {
   const row = ev.target.closest(".folder");
@@ -135,6 +218,7 @@ $("#folders").addEventListener("click", async (ev) => {
   if (act === "menu") { ev.stopPropagation(); openMenu(row, path); return; }
   if (act === "skipped") return showList(path, "skipped");
   if (act === "failures") return showList(path, "failures");
+  if (path !== scope) within = "";
   scope = path;
   renderFolders();
   if (lastQuery) runSearch();
@@ -302,11 +386,21 @@ function startPolling() {
     state.job = job;
     renderJob(job);
     if (running && ++ticks % 8 === 0) { state = await api.state(); renderFolders(); }
-    if (running !== wasRunning) { await refresh(); }
+    if (running !== wasRunning) { dirCache = {}; await refresh(); }
+    if (!modelLoaded) await checkModelLoaded();
     wasRunning = running;
     pollTimer = setTimeout(beat, running ? 700 : 2500);
   };
   pollTimer = setTimeout(beat, 300);
+}
+
+const READY_MSG = "Getting ready: loading the language model. The first search can take up to half a minute.";
+
+async function checkModelLoaded() {
+  try { modelLoaded = await api.model_loaded(); } catch (e) { return; }
+  const meta = $("#search-meta");
+  if (!modelLoaded && !meta.textContent) meta.textContent = READY_MSG;
+  if (modelLoaded && meta.textContent === READY_MSG) meta.textContent = "";
 }
 
 function renderFoot() {
@@ -395,7 +489,6 @@ $("#job-dismiss").onclick = () => { dismissedJob = jobKey(state.job); show($("#j
 // ---------- search ----------
 
 $("#search-form").addEventListener("submit", (ev) => { ev.preventDefault(); runSearch(); });
-$("#sub").addEventListener("change", () => { if (lastQuery) runSearch(); });
 // Emptying the box (typing it away, or the × button) clears the results.
 $("#q").addEventListener("input", () => { if (!$("#q").value.trim()) clearResults(); });
 
@@ -416,9 +509,9 @@ async function runSearch() {
     $("#results").innerHTML = `<div class="empty"><h3>Nothing to search yet</h3>Add a folder to index it first.</div>`;
     return;
   }
-  $("#search-meta").textContent = "Searching…";
-  const sub = $("#sub").hidden ? null : $("#sub").value || null;
-  const res = await api.search(q, scope, sub, 30);
+  $("#search-meta").textContent = modelLoaded ? "Searching…" : READY_MSG.replace("can take", "takes") + " After that, under a second.";
+  const res = await api.search(q, scope, scope ? within || null : null, 30);
+  modelLoaded = true;
   if (q !== lastQuery) return;
   renderResults(res, q);
 }
@@ -433,17 +526,28 @@ function renderResults(res, q) {
   }
   const multi = scope === null && state.folders.length > 1;
   $("#results").innerHTML = res.results.map((r, i) => {
-    const dir = r.path.includes("/") ? r.path.slice(0, r.path.lastIndexOf("/")) : "";
-    const where = [multi ? r.root_name : "", dir].filter(Boolean).join(" › ");
+    // The location doubles as a shortcut: click any folder in it to search
+    // just that folder.
+    const parts = r.path.split("/").slice(0, -1);
+    const crumbs = [];
+    if (multi) crumbs.push(`<a class="crumb" data-root="${esc(r.root)}" data-dir="" title="Search only in ${esc(r.root_name)}">${esc(r.root_name)}</a>`);
+    parts.forEach((p, k) => {
+      const dir = parts.slice(0, k + 1).join("/");
+      crumbs.push(`<a class="crumb" data-root="${esc(r.root)}" data-dir="${esc(dir)}" title="Search only in this folder">${esc(p)}</a>`);
+    });
     return `<div class="result" data-i="${i}">
       <div class="result-name">${esc(r.filename)}</div>
-      ${where ? `<div class="result-where">${esc(where)}</div>` : ""}
+      ${crumbs.length ? `<div class="result-where">${crumbs.join(" › ")}</div>` : ""}
       ${r.hits.map((h, j) => `<button class="passage" data-i="${i}" data-j="${j}">
           ${pageLabel(h) ? `<span class="pg">${pageLabel(h)}</span>` : ""}${highlight(snippet(h.text, terms), terms)}
         </button>`).join("")}
     </div>`;
   }).join("");
   $("#results").scrollTop = 0;
+  $("#results").querySelectorAll(".crumb").forEach((a) => (a.onclick = (ev) => {
+    ev.stopPropagation();
+    setWithin(a.dataset.root, a.dataset.dir);
+  }));
   $("#results").querySelectorAll(".passage").forEach((b) => (b.onclick = () => {
     $("#results").querySelectorAll(".passage.sel").forEach((x) => x.classList.remove("sel"));
     b.classList.add("sel");

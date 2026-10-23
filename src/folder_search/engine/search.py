@@ -16,6 +16,12 @@ import numpy as np
 from .store import Store, vec_bytes
 
 RRF_K = 60
+# A subfolder with up to this many passages is scored exhaustively, so a
+# search inside it is complete. Measured: 830 stored vectors read in 8 ms.
+EXACT_LIMIT = 60_000
+# Past that, nearest-neighbour search over the subfolder's top-level folder
+# fetches this many candidates, then keeps those inside the subfolder.
+WIDE_POOL = 4096
 
 
 @dataclass
@@ -64,23 +70,84 @@ def rrf(rankings: list[tuple[list[int], float]]) -> dict[int, float]:
     return scores
 
 
-def vector_ranking(store: Store, qvec: np.ndarray, k: int, folder: str | None) -> list[int]:
+def _like_prefix(within: str) -> str:
+    """A LIKE pattern for paths under `within`, with wildcards escaped."""
+    esc = within.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return esc + "/%"
+
+
+def chunk_ids_under(store: Store, within: str) -> list[int]:
+    return [
+        r[0]
+        for r in store.db.execute(
+            "select c.id from chunks c join files f on f.id = c.file_id "
+            "where f.path like ? escape '\\'",
+            (_like_prefix(within),),
+        )
+    ]
+
+
+def _exact_ranking(store: Store, qvec: np.ndarray, ids: list[int], k: int) -> list[int]:
+    """Score every passage in `ids` against the query: complete, not approximate."""
+    if not ids:
+        return []
+    q = store.db.execute("select vec_quantize_int8(?, 'unit')", (vec_bytes(qvec),)).fetchone()[0]
+    q = np.frombuffer(q, dtype=np.int8).astype(np.float32)
+    q /= np.linalg.norm(q) or 1.0
+    rowids, blobs = [], []
+    for i in range(0, len(ids), 500):
+        batch = ids[i : i + 500]
+        for rowid, blob in store.db.execute(
+            f"select rowid, embedding from chunks_vec where rowid in ({','.join('?' * len(batch))})",
+            batch,
+        ):
+            rowids.append(rowid)
+            blobs.append(blob)
+    m = np.frombuffer(b"".join(blobs), dtype=np.int8).reshape(len(blobs), -1).astype(np.float32)
+    m /= np.linalg.norm(m, axis=1, keepdims=True).clip(min=1e-6)
+    order = np.argsort(-(m @ q))[:k]
+    return [rowids[i] for i in order]
+
+
+def vector_ranking(store: Store, qvec: np.ndarray, k: int, within: str | None) -> list[int]:
+    """Nearest passages, optionally only those under the subfolder `within`.
+
+    `within` is a folder path relative to the indexed folder ("Papers" or
+    "Papers/2026-08-17 papers"). A top-level folder is filtered inside the
+    vector index itself; a deeper one is scored exhaustively when it is a
+    reasonable size, which keeps the results complete.
+    """
+    within = (within or "").strip("/") or None
     sql = (
         "select rowid from chunks_vec where embedding match vec_quantize_int8(?, 'unit') "
         "and k = ?"
     )
-    params: list = [vec_bytes(qvec), k]
-    if folder is not None:
-        sql += " and folder = ?"
-        params.append(folder)
-    return [r[0] for r in store.db.execute(sql + " order by distance", params)]
+    if within is None:
+        return [r[0] for r in store.db.execute(sql + " order by distance", (vec_bytes(qvec), k))]
+    top = within.split("/")[0]
+    if "/" not in within:
+        return [
+            r[0]
+            for r in store.db.execute(
+                sql + " and folder = ? order by distance", (vec_bytes(qvec), k, top)
+            )
+        ]
+    ids = chunk_ids_under(store, within)
+    if len(ids) <= EXACT_LIMIT:
+        return _exact_ranking(store, qvec, ids, k)
+    inside = set(ids)
+    rows = store.db.execute(
+        sql + " and folder = ? order by distance", (vec_bytes(qvec), WIDE_POOL, top)
+    )
+    return [r[0] for r in rows if r[0] in inside][:k]
 
 
-def keyword_ranking(store: Store, query: str, k: int, folder: str | None) -> list[int]:
+def keyword_ranking(store: Store, query: str, k: int, within: str | None) -> list[int]:
     fts = fts_query(query)
     if not fts:
         return []
-    if folder is None:
+    within = (within or "").strip("/") or None
+    if within is None:
         sql = (
             "select rowid from chunks_fts where chunks_fts match ? "
             "order by bm25(chunks_fts) limit ?"
@@ -90,10 +157,10 @@ def keyword_ranking(store: Store, query: str, k: int, folder: str | None) -> lis
         sql = (
             "select chunks_fts.rowid from chunks_fts "
             "join chunks c on c.id = chunks_fts.rowid join files f on f.id = c.file_id "
-            "where chunks_fts match ? and f.folder = ? "
+            "where chunks_fts match ? and f.path like ? escape '\\' "
             "order by bm25(chunks_fts) limit ?"
         )
-        params = (fts, folder, k)
+        params = (fts, _like_prefix(within), k)
     try:
         return [r[0] for r in store.db.execute(sql, params)]
     except Exception:
@@ -104,12 +171,12 @@ def search_chunks(
     store: Store,
     qvec: np.ndarray,
     query: str,
-    folder: str | None = None,
+    within: str | None = None,
     pool: int = 150,
     keyword_weight: float | None = None,
 ) -> list[Hit]:
-    vec_ids = vector_ranking(store, qvec, pool, folder)
-    kw_ids = keyword_ranking(store, query, pool, folder)
+    vec_ids = vector_ranking(store, qvec, pool, within)
+    kw_ids = keyword_ranking(store, query, pool, within)
     if keyword_weight is None:
         # A quoted phrase means "I want these exact words".
         keyword_weight = 2.0 if '"' in query else 1.0
@@ -153,8 +220,8 @@ def search(
     store: Store,
     embedder,
     query: str,
-    folder: str | None = None,
+    within: str | None = None,
     max_files: int = 25,
 ) -> list[FileResult]:
     qvec = embedder.embed_queries([query.replace('"', "")])[0]
-    return group_by_file(search_chunks(store, qvec, query, folder), max_files)
+    return group_by_file(search_chunks(store, qvec, query, within), max_files)

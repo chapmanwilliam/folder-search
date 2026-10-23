@@ -37,7 +37,7 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path in ("/", "/index.html"):
             html = (UI_DIR / "index.html").read_bytes()
-            html = html.replace(b'<script src="app.js">', SHIM + b'<script src="app.js">')
+            html = html.replace(b"<script>document.write('<script src=\"app.js", SHIM + b"<script>document.write('<script src=\"app.js")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()

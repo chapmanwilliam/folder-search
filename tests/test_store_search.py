@@ -33,7 +33,7 @@ def test_search_finds_and_filters_by_subfolder(tmp_path, embedder):
     add(store, embedder, "Jones/other.pdf", "Jones", ["tenancy deposit scheme"])
     results = search(store, embedder, "limitation date of knowledge")
     assert {r.path for r in results[:2]} == {"Smith/advice.pdf", "Jones/letter.pdf"}
-    only = search(store, embedder, "limitation date of knowledge", folder="Smith")
+    only = search(store, embedder, "limitation date of knowledge", within="Smith")
     assert [r.path for r in only] == ["Smith/advice.pdf"]
     assert only[0].hits[0].page_start == 1
 
@@ -75,3 +75,53 @@ def test_group_by_file_one_result_per_document():
     out = group_by_file(hits)
     assert [f.path for f in out] == ["a.pdf", "b.pdf"]
     assert [h.chunk_id for h in out[0].hits] == [1, 3]
+
+
+def test_search_within_a_deep_subfolder(tmp_path, embedder, monkeypatch):
+    store = Store(tmp_path / "i.db")
+    add(store, embedder, "Smith/Papers/2026 papers/report.pdf", "Smith", ["date of knowledge for limitation"])
+    add(store, embedder, "Smith/Papers/2025 papers/report.pdf", "Smith", ["date of knowledge for limitation too"])
+    add(store, embedder, "Smith/Advice/advice.pdf", "Smith", ["date of knowledge for limitation as well"])
+    add(store, embedder, "Smith/Papers/2026 papers_old/x.pdf", "Smith", ["date of knowledge for limitation"])
+    q = "limitation date of knowledge"
+    assert [r.path for r in search(store, embedder, q, within="Smith/Papers/2026 papers")] == [
+        "Smith/Papers/2026 papers/report.pdf"
+    ]
+    assert {r.path for r in search(store, embedder, q, within="Smith/Papers")} == {
+        "Smith/Papers/2026 papers/report.pdf",
+        "Smith/Papers/2025 papers/report.pdf",
+        "Smith/Papers/2026 papers_old/x.pdf",
+    }
+    # The large-subfolder path (nearest-neighbour then filter) agrees.
+    import folder_search.engine.search as s
+
+    monkeypatch.setattr(s, "EXACT_LIMIT", 0)
+    assert [r.path for r in search(store, embedder, q, within="Smith/Papers/2026 papers")] == [
+        "Smith/Papers/2026 papers/report.pdf"
+    ]
+
+
+def test_exact_ranking_orders_by_similarity(tmp_path, embedder):
+    from folder_search.engine.search import _exact_ranking, chunk_ids_under
+
+    store = Store(tmp_path / "i.db")
+    add(store, embedder, "A/B/x.pdf", "A", ["tenancy deposit", "date of knowledge limitation", "quantum"])
+    ids = chunk_ids_under(store, "A/B")
+    order = _exact_ranking(store, embedder.embed_queries(["date of knowledge limitation"])[0], ids, 3)
+    text = store.db.execute("select text from chunks where id = ?", (order[0],)).fetchone()[0]
+    assert text == "date of knowledge limitation"
+
+
+def test_like_wildcards_in_folder_names_are_literal(tmp_path, embedder):
+    store = Store(tmp_path / "i.db")
+    add(store, embedder, "A/50%_off/x.pdf", "A", ["limitation"])
+    add(store, embedder, "A/50ab_off/y.pdf", "A", ["limitation"])
+    assert [r.path for r in search(store, embedder, "limitation", within="A/50%_off")] == ["A/50%_off/x.pdf"]
+
+
+def test_all_dirs_counts_nested_files(tmp_path, embedder):
+    store = Store(tmp_path / "i.db")
+    add(store, embedder, "A/B/x.pdf", "A", ["one"])
+    add(store, embedder, "A/y.pdf", "A", ["two"])
+    add(store, embedder, "root.pdf", "", ["three"])
+    assert store.all_dirs() == [("A", 2), ("A/B", 1)]
